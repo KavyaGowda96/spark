@@ -1,0 +1,4 @@
+flask==3.0.0
+flask-socketio==5.3.5
+kafka-python-ng==2.2.2
+pyspark==3.5.0
