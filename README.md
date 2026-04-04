@@ -1,79 +1,99 @@
-# GPS Vehicle Tracking System with Web Dashboard
+# GPS Vehicle Tracking System
 
-A real-time vehicle tracking system using Apache Spark Streaming, Kafka, and a web-based dashboard.
+A real-time GPS vehicle tracking system built with Python (Flask, Apache Kafka, Spark Streaming) and a live web dashboard with interactive map and speed tracking graph.
 
-## Features
+## Live Dashboard
 
-- 🚗 Real-time GPS vehicle tracking
-- 📍 Interactive map visualization using Leaflet
-- ⚠️ Overspeed alerts (>80 km/h)
-- 📊 Live statistics dashboard
-- 🔄 WebSocket-based real-time updates
+The web dashboard is deployed on Netlify and features:
+
+- **Interactive Map** - Real-time vehicle positions on a Leaflet map centered on Bangalore, with color-coded markers (green = normal, red = overspeed) and movement trails
+- **Speed Tracking Graph** - Full-width Chart.js line graph tracking speed of all 5 vehicles in real-time, with a dashed red speed limit line at 80 km/h
+- **Dashboard Stats** - Active vehicle count, average fleet speed, max speed, and total overspeed alerts
+- **Vehicle Status Panel** - Live list of all tracked vehicles with current speed and GPS coordinates
+- **Overspeed Alerts** - Scrolling alert bar capturing every speed limit violation with vehicle ID, speed, timestamp, and location
 
 ## System Architecture
 
-1. **GPS Producer** (`gps_producer.py`) - Simulates GPS data and sends to Kafka
-2. **Spark Stream Processor** (`vehicle_tracking_spark.py`) - Processes GPS streams using Apache Spark
-3. **Web Dashboard** (`web_app.py`) - Flask-based real-time web interface
+```
+GPS Producer (Python)          Spark Stream Processor (Python)
+      |                                |
+      v                                v
+  Apache Kafka  <---->  vehicle_gps topic
+      |
+      v
+Flask Web App (Python) ---> WebSocket ---> Browser Dashboard
+```
 
-## Installation
+### Components
 
-1. Install Python dependencies:
+| File | Description |
+|------|-------------|
+| `gps_producer.py` | Simulates GPS data for 5 vehicles and publishes to Kafka topic `vehicle_gps` |
+| `vehicle_tracking_spark.py` | Spark Structured Streaming processor - reads from Kafka, computes windowed avg/max speed stats, detects overspeed alerts |
+| `web_app.py` | Flask + SocketIO web server that consumes Kafka messages and pushes real-time updates to the browser via WebSocket |
+| `web_app_simple.py` | Standalone Flask app with built-in GPS simulator (no Kafka dependency) - good for quick demos |
+| `index.html` | Self-contained web dashboard deployed on Netlify with client-side GPS simulation |
+| `requirements.txt` | Python dependencies |
+
+## Python Backend Setup
+
+### Prerequisites
+
+- Python 3.8+
+- Apache Kafka (for full pipeline)
+- Apache Spark (for stream processing)
+
+### Installation
+
 ```bash
 pip install -r requirements.txt
 ```
 
-2. Install and start Kafka:
-   - Download Kafka from https://kafka.apache.org/downloads
-   - Start Zookeeper: `bin/zookeeper-server-start.sh config/zookeeper.properties`
-   - Start Kafka: `bin/kafka-server-start.sh config/server.properties`
+### Quick Start (No Kafka Required)
 
-## Usage
+Run the standalone Flask app with built-in simulation:
 
-### Run the complete system:
+```bash
+python web_app_simple.py
+```
 
-1. **Start GPS Producer** (Terminal 1):
+Open http://localhost:5000 in your browser.
+
+### Full Pipeline (With Kafka + Spark)
+
+**Terminal 1** - Start Kafka:
+```bash
+bin/zookeeper-server-start.sh config/zookeeper.properties
+bin/kafka-server-start.sh config/server.properties
+```
+
+**Terminal 2** - Start GPS Producer:
 ```bash
 python gps_producer.py
 ```
 
-2. **Start Web Dashboard** (Terminal 2):
+**Terminal 3** - Start Web Dashboard:
 ```bash
 python web_app.py
 ```
 
-3. **Open Dashboard** in browser:
-```
-http://localhost:5000
-```
-
-4. **(Optional) Run Spark Processing** (Terminal 3):
+**Terminal 4** (Optional) - Start Spark Analytics:
 ```bash
 python vehicle_tracking_spark.py
 ```
 
-## Dashboard Features
-
-- **Live Map**: Shows real-time vehicle positions with color-coded markers
-  - Green: Normal speed
-  - Red: Overspeed alert
-  
-- **Vehicle Status**: Lists all active vehicles with current speed and location
-
-- **Statistics**: 
-  - Total active vehicles
-  - Number of overspeed alerts
-  - Average fleet speed
-
-- **Alert History**: Recent overspeed violations
+Open http://localhost:5000 in your browser.
 
 ## Configuration
 
-- **Kafka Server**: `localhost:9092`
-- **Kafka Topic**: `vehicle_gps`
-- **Web Server**: `http://localhost:5000`
-- **Overspeed Threshold**: 80 km/h
-- **Base Location**: Bangalore (12.9716°N, 77.5946°E)
+| Parameter | Value |
+|-----------|-------|
+| Kafka Server | `localhost:9092` |
+| Kafka Topic | `vehicle_gps` |
+| Web Server | `http://localhost:5000` |
+| Overspeed Threshold | 80 km/h |
+| Base Location | Bangalore (12.9716°N, 77.5946°E) |
+| Tracked Vehicles | CAR_001, CAR_002, CAR_003, TRUCK_01, BUS_10 |
 
 ## Vehicle Data Format
 
@@ -86,3 +106,13 @@ python vehicle_tracking_spark.py
   "event_time": "2025-12-11T12:00:00"
 }
 ```
+
+## Technologies Used
+
+- **Python** - Flask, Flask-SocketIO, kafka-python, PySpark
+- **Apache Kafka** - Message streaming
+- **Apache Spark** - Stream processing and analytics
+- **Leaflet.js** - Interactive maps
+- **Chart.js** - Speed tracking graphs
+- **HTML/CSS/JavaScript** - Dashboard frontend
+- **Netlify** - Static site deployment
