@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GPS Vehicle Tracking Dashboard</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #0f172a; color: #e2e8f0; }
+
+        header {
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            padding: 16px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid #334155;
+        }
+        header h1 { font-size: 1.4rem; font-weight: 600; }
+        header h1 span { color: #38bdf8; }
+        .header-status { display: flex; align-items: center; gap: 8px; font-size: 0.85rem; color: #94a3b8; }
+        .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #22c55e; animation: pulse 2s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+        .layout {
+            display: grid;
+            grid-template-columns: 1fr 360px;
+            grid-template-rows: auto 1fr;
+            height: calc(100vh - 60px);
+        }
+
+        /* Stats bar */
+        .stats-bar {
+            grid-column: 1 / -1;
+            display: flex;
+            gap: 16px;
+            padding: 16px 24px;
+            background: #1e293b;
+            border-bottom: 1px solid #334155;
+            overflow-x: auto;
+        }
+        .stat-card {
+            background: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 10px;
+            padding: 14px 20px;
+            min-width: 180px;
+            flex: 1;
+        }
+        .stat-card .label { font-size: 0.75rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
+        .stat-card .value { font-size: 1.6rem; font-weight: 700; }
+        .stat-card .value.blue { color: #38bdf8; }
+        .stat-card .value.green { color: #22c55e; }
+        .stat-card .value.red { color: #f87171; }
+        .stat-card .value.amber { color: #fbbf24; }
+
+        /* Map */
+        #map {
+            grid-column: 1;
+            grid-row: 2;
+            min-height: 0;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            grid-column: 2;
+            grid-row: 2;
+            background: #1e293b;
+            border-left: 1px solid #334155;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .sidebar-section { padding: 16px; border-bottom: 1px solid #334155; }
+        .sidebar-section h2 { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em; color: #94a3b8; margin-bottom: 12px; }
+
+        /* Vehicle list */
+        .vehicle-list { flex: 1; overflow-y: auto; padding: 0; }
+        .vehicle-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
+            border-bottom: 1px solid #1e293b;
+            transition: background 0.2s;
+            cursor: pointer;
+        }
+        .vehicle-item:hover { background: #334155; }
+        .vehicle-icon {
+            width: 36px; height: 36px;
+            border-radius: 8px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1.1rem;
+            flex-shrink: 0;
+        }
+        .vehicle-icon.normal { background: rgba(34,197,94,0.15); color: #22c55e; }
+        .vehicle-icon.alert { background: rgba(248,113,113,0.15); color: #f87171; }
+        .vehicle-info { flex: 1; min-width: 0; }
+        .vehicle-info .vid { font-weight: 600; font-size: 0.9rem; }
+        .vehicle-info .coords { font-size: 0.75rem; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .vehicle-speed { text-align: right; font-weight: 700; font-size: 0.95rem; }
+        .vehicle-speed.over { color: #f87171; }
+        .vehicle-speed.safe { color: #22c55e; }
+        .vehicle-speed small { display: block; font-weight: 400; font-size: 0.7rem; color: #64748b; }
+
+        /* Alert log */
+        .alert-section { flex: 0 0 auto; max-height: 220px; overflow-y: auto; }
+        .alert-item {
+            padding: 10px 16px;
+            border-bottom: 1px solid #1e293b;
+            font-size: 0.8rem;
+        }
+        .alert-item .alert-badge { display: inline-block; background: rgba(248,113,113,0.15); color: #f87171; padding: 2px 8px; border-radius: 4px; font-weight: 600; font-size: 0.72rem; margin-right: 6px; }
+        .alert-item .alert-time { color: #64748b; font-size: 0.72rem; float: right; }
+
+        /* Responsive */
+        @media (max-width: 800px) {
+            .layout { grid-template-columns: 1fr; grid-template-rows: auto 50vh auto; }
+            .sidebar { grid-column: 1; grid-row: 3; border-left: none; border-top: 1px solid #334155; max-height: 50vh; }
+        }
+
+        /* Leaflet dark overrides */
+        .leaflet-popup-content-wrapper { background: #1e293b; color: #e2e8f0; border-radius: 8px; }
+        .leaflet-popup-tip { background: #1e293b; }
+        .leaflet-popup-content { font-family: inherit; font-size: 0.85rem; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1><span>GPS</span> Vehicle Tracking Dashboard</h1>
+        <div class="header-status">
+            <div class="status-dot"></div>
+            Live Simulation
+        </div>
+    </header>
+
+    <div class="layout">
+        <div class="stats-bar">
+            <div class="stat-card">
+                <div class="label">Active Vehicles</div>
+                <div class="value blue" id="stat-vehicles">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Avg Speed</div>
+                <div class="value green" id="stat-avg-speed">0 <small style="font-size:.6em;font-weight:400">km/h</small></div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Overspeed Alerts</div>
+                <div class="value red" id="stat-alerts">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Max Speed</div>
+                <div class="value amber" id="stat-max-speed">0 <small style="font-size:.6em;font-weight:400">km/h</small></div>
+            </div>
+        </div>
+
+        <div id="map"></div>
+
+        <div class="sidebar">
+            <div class="sidebar-section">
+                <h2>Vehicle Status</h2>
+            </div>
+            <div class="vehicle-list" id="vehicle-list"></div>
+            <div class="sidebar-section alert-section">
+                <h2>Overspeed Alert Log</h2>
+                <div id="alert-log"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- Configuration ---
+        const SPEED_LIMIT = 80;
+        const BASE_LAT = 12.9716;
+        const BASE_LON = 77.5946;
+        const UPDATE_INTERVAL = 1000;
+        const VEHICLES = [
+            { id: 'CAR_001', icon: '\u{1F697}' },
+            { id: 'CAR_002', icon: '\u{1F699}' },
+            { id: 'CAR_003', icon: '\u{1F695}' },
+            { id: 'TRUCK_01', icon: '\u{1F69A}' },
+            { id: 'BUS_10',   icon: '\u{1F68C}' }
+        ];
+
+        // --- State ---
+        const vehicleState = {};
+        const markers = {};
+        let alertCount = 0;
+
+        // --- Map Setup ---
+        const map = L.map('map', { zoomControl: true }).setView([BASE_LAT, BASE_LON], 13);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; OpenStreetMap &copy; CARTO',
+            maxZoom: 19
+        }).addTo(map);
+
+        function createIcon(color) {
+            return L.divIcon({
+                className: '',
+                html: `<div style="
+                    width:18px;height:18px;border-radius:50%;
+                    background:${color};
+                    border:3px solid ${color === '#22c55e' ? '#166534' : '#991b1b'};
+                    box-shadow:0 0 8px ${color}88;
+                "></div>`,
+                iconSize: [18, 18],
+                iconAnchor: [9, 9]
+            });
+        }
+        const iconNormal = createIcon('#22c55e');
+        const iconAlert  = createIcon('#f87171');
+
+        // --- Simulation ---
+        VEHICLES.forEach(v => {
+            vehicleState[v.id] = {
+                lat: BASE_LAT + (Math.random() - 0.5) * 0.06,
+                lon: BASE_LON + (Math.random() - 0.5) * 0.06,
+                speed: Math.random() * 60,
+                heading: Math.random() * 360,
+                icon: v.icon
+            };
+        });
+
+        function tick() {
+            VEHICLES.forEach(v => {
+                const s = vehicleState[v.id];
+
+                // Randomly adjust heading and speed
+                s.heading += (Math.random() - 0.5) * 40;
+                s.speed += (Math.random() - 0.5) * 20;
+                s.speed = Math.max(0, Math.min(120, s.speed));
+
+                // Move based on heading & speed
+                const dist = (s.speed / 3600) * (UPDATE_INTERVAL / 1000) * 0.01;
+                s.lat += Math.cos(s.heading * Math.PI / 180) * dist;
+                s.lon += Math.sin(s.heading * Math.PI / 180) * dist;
+
+                // Keep within bounds
+                s.lat = Math.max(BASE_LAT - 0.05, Math.min(BASE_LAT + 0.05, s.lat));
+                s.lon = Math.max(BASE_LON - 0.05, Math.min(BASE_LON + 0.05, s.lon));
+
+                const isAlert = s.speed > SPEED_LIMIT;
+                const ts = new Date().toISOString();
+
+                // Update marker
+                const icon = isAlert ? iconAlert : iconNormal;
+                if (markers[v.id]) {
+                    markers[v.id].setLatLng([s.lat, s.lon]).setIcon(icon);
+                } else {
+                    markers[v.id] = L.marker([s.lat, s.lon], { icon })
+                        .addTo(map)
+                        .bindPopup('');
+                }
+                markers[v.id].setPopupContent(
+                    `<strong>${v.icon} ${v.id}</strong><br>
+                     Speed: ${s.speed.toFixed(1)} km/h<br>
+                     Lat: ${s.lat.toFixed(4)}, Lon: ${s.lon.toFixed(4)}<br>
+                     ${isAlert ? '<span style="color:#f87171;font-weight:600">OVERSPEED</span>' : '<span style="color:#22c55e">Normal</span>'}`
+                );
+
+                // Alert log
+                if (isAlert) {
+                    alertCount++;
+                    const log = document.getElementById('alert-log');
+                    const el = document.createElement('div');
+                    el.className = 'alert-item';
+                    const time = new Date().toLocaleTimeString();
+                    el.innerHTML = `<span class="alert-badge">OVERSPEED</span>${v.id} at ${s.speed.toFixed(1)} km/h<span class="alert-time">${time}</span>`;
+                    log.prepend(el);
+                    if (log.children.length > 50) log.removeChild(log.lastChild);
+                }
+            });
+
+            updateUI();
+        }
+
+        function updateUI() {
+            const states = Object.values(vehicleState);
+            const speeds = states.map(s => s.speed);
+            const avg = speeds.reduce((a, b) => a + b, 0) / speeds.length;
+
+            document.getElementById('stat-vehicles').textContent = states.length;
+            document.getElementById('stat-avg-speed').innerHTML = `${avg.toFixed(1)} <small style="font-size:.6em;font-weight:400">km/h</small>`;
+            document.getElementById('stat-alerts').textContent = alertCount;
+            document.getElementById('stat-max-speed').innerHTML = `${Math.max(...speeds).toFixed(1)} <small style="font-size:.6em;font-weight:400">km/h</small>`;
+
+            // Vehicle list
+            const list = document.getElementById('vehicle-list');
+            list.innerHTML = '';
+            VEHICLES.forEach(v => {
+                const s = vehicleState[v.id];
+                const isAlert = s.speed > SPEED_LIMIT;
+                const item = document.createElement('div');
+                item.className = 'vehicle-item';
+                item.innerHTML = `
+                    <div class="vehicle-icon ${isAlert ? 'alert' : 'normal'}">${s.icon}</div>
+                    <div class="vehicle-info">
+                        <div class="vid">${v.id}</div>
+                        <div class="coords">${s.lat.toFixed(4)}, ${s.lon.toFixed(4)}</div>
+                    </div>
+                    <div class="vehicle-speed ${isAlert ? 'over' : 'safe'}">
+                        ${s.speed.toFixed(1)}
+                        <small>km/h</small>
+                    </div>`;
+                item.addEventListener('click', () => {
+                    map.setView([s.lat, s.lon], 15);
+                    markers[v.id].openPopup();
+                });
+                list.appendChild(item);
+            });
+        }
+
+        // --- Start ---
+        tick();
+        setInterval(tick, UPDATE_INTERVAL);
+    </script>
+</body>
+</html>
